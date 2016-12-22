@@ -1,0 +1,100 @@
+#!/bin/bash
+
+function parse_arguments() {
+  for arg do
+    case "$arg" in
+      -w) WEEK=`date +%V` ;;
+      -w=*) WEEK=`echo "$arg" | sed -e "s!-w=!!" | xargs printf "%02g"` ;;
+      -m) MONTH=`date +%m` ;;
+      -m=*) MONTH=`echo "$arg" | sed -e "s!-m=!!" | xargs printf "%02g"` ;;
+      -y) YEAR=`date +%Y` ;;
+      -y=*) YEAR=`echo "$arg" | sed -e "s!-y=!!" | xargs printf "%02g"` ;;
+    esac
+  done
+}
+
+function process_week() {
+  if [ -n "$WEEK" ] ; then
+    # resolve file that has the week
+    local file_containing_week=`find $WORKDIR -name "$FILE_NAME" | xargs grep -le "$WEEK_PREFIX $WEEK"`
+    if [ -z "$file_containing_week" ] ; then
+      echo "week $WEEK not found"
+      exit
+    fi
+    echo "file containing week $WEEK is $file_containing_week"
+
+    # resolve previous week
+    local w=`echo $WEEK | xargs printf "%g"`
+    local previous_week=`echo $(($w - 1)) | xargs printf "%02g"`
+    echo "previous week is $previous_week"
+
+    # resolve start line
+    local start_line=`sed -n "/$WEEK_PREFIX $previous_week/=" $file_containing_week`
+    if [ -z "$start_line" ] ; then
+      start_line=0
+    fi
+    start_line=$(($start_line + 1))
+    echo "start $start_line"
+
+    # resolve end line
+    local end_line=`sed -n "/$WEEK_PREFIX $WEEK/=" $file_containing_week`
+    echo "end $end_line"
+    echo
+
+    # report
+    sed -n "${start_line},${end_line}p" $file_containing_week
+    echo
+
+    echo 0 `sed -n "${start_line},${end_line}p" $file_containing_week | grep -e "^==[^=]*$" | sed -e 's/.*==//' | tr -d '\n'` | bc
+    exit
+  fi
+}
+
+function sum_days() {
+  echo 0 `find $WORKDIR -name "$FILE_NAME" | xargs grep -e "^==[^=]*$" | sed -e 's/.*==//' | tr -d '\n'` | bc
+}
+
+function init() {
+  set -eu
+  : ${WORKDIR:="${SCRIPT_DIR}/exampledata"}
+  : ${WEEK_PREFIX:="week"}
+
+  set +eu
+  FILE_NAME="hours-*"
+  if [ -n "$YEAR" ] ; then
+    FILE_NAME="hours-$YEAR-*"
+  fi
+
+  if [ -n "$MONTH" ] ; then
+    if [ -n "$YEAR" ] ; then
+      FILE_NAME="hours-$YEAR-$MONTH.txt"
+    else
+      FILE_NAME="hours-$(date +%Y)-$MONTH.txt"
+    fi
+  fi
+
+  if [ -n "$WEEK" ] ; then
+    if [ -n "$YEAR" ] ; then
+      FILE_NAME="hours-$YEAR-*"
+    else
+      FILE_NAME="hours-$(date +%Y)-*"
+    fi
+  fi
+}
+
+function main() {
+  if [[ $VERBOSE == "true" ]]; then
+    set -x
+  fi
+
+  parse_arguments "$@"
+  SCRIPT_DIR=$(dirname $(readlink -f $0))
+  init
+
+  process_week
+
+  find $WORKDIR -name "$FILE_NAME" | xargs grep -he "^=="
+  sum_days
+}
+
+main "$@"
